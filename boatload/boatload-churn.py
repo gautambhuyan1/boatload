@@ -203,31 +203,31 @@ jobs:
 {% endfor %}
 """
 
-#workload_delete = """---
-#global:
-#  writeToFile: false
-#  measurements:
-#  - name: podLatency
-#    esIndex: {{ measurements_index }}
-#  indexerConfig:
-#    enabled: {{ indexing }}
-#    esServers: [{{ index_server}}]
-#    insecureSkipVerify: true
-#    defaultIndex: {{ default_index }}
-#    type: elastic
-#jobs:
-#  - name: cleanup-boatload
-#    jobType: delete
-#    waitForDeletion: true
-#    qps: 10
-#    burst: 20
-#    objects:
-#    - kind: Namespace
-#      {%- for val in namespace %}
-#      labelSelector: {name: sno-churning-churn-{{val}}}
-#      apiVersion: v1
-#      {%- endfor %}
-#"""
+workload_delete = """---
+global:
+  writeToFile: false
+  measurements:
+  - name: podLatency
+    esIndex: {{ measurements_index }}
+  indexerConfig:
+    enabled: {{ indexing }}
+    esServers: [{{ index_server}}]
+    insecureSkipVerify: true
+    defaultIndex: {{ default_index }}
+    type: elastic
+jobs:
+{% for val in range(1, namespaces+1) %}    
+  - name: sno-churning-churn-delete-{{ val }}
+    jobType: delete
+    waitForDeletion: true
+    qps: 10
+    burst: 20
+    objects:
+    - kind: Namespace
+      labelSelector: {name: sno-churning-churn-{{val}}}
+      apiVersion: v1
+{%- endfor %}
+"""
 
 workload_metrics = """---
 global:
@@ -655,16 +655,16 @@ def main():
       "RESPONSE_DELAY_MILLISECONDS=50", "LIVENESS_SUCCESS_MAX=60", "READINESS_SUCCESS_MAX=30"
   ]
   # Defaults set for bare-metal cluster nodedensity metrics
-  default_metrics_collected = [
-      "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "kubeletCoresUsed",
-      "kubeletMemory", "crioCoresUsed", "crioMemory"
-  ]
+  #default_metrics_collected = [
+  #    "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "kubeletCoresUsed",
+  #    "kubeletMemory", "crioCoresUsed", "crioMemory"
+  #]
   # Recommended SNO nodedensity metrics
-  # default_metrics_collected = [
-  #     "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "kubeletCoresUsed",
-  #     "kubeletMemory", "crioCoresUsed", "crioMemory", "rxNetworkBytes", "txNetworkBytes",
-  #     "nodeDiskWrittenBytes", "nodeDiskReadBytes", "nodeCPU"
-  # ]
+  default_metrics_collected = [
+       "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "kubeletCoresUsed",
+       "kubeletCPU", "kubeletMemory", "crioCoresUsed", "crioCPU", "crioMemory", "rxNetworkBytes", "txNetworkBytes",
+       "nodeDiskWrittenBytes", "nodeDiskReadBytes", "nodeCPU", "controlPlaneCPU", "controlPlaneMemory"
+  ]
 
   parser = argparse.ArgumentParser(
       description="Run boatload",
@@ -1234,6 +1234,7 @@ def main():
     workload_delete_rendered = t.render(
         measurements_index=cliargs.measurements_index,
         indexing=indexing_enabled,
+        namespaces=cliargs.namespaces,
         index_server=cliargs.index_server,
         default_index=cliargs.default_index)
 
