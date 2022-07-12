@@ -66,6 +66,7 @@ jobs:
     - objectTemplate: workload-deployment-selector.yml
       replicas: {{ deployments }}
       inputVars:
+        runtimeClassName: performance-perf-profile
         pod_replicas: {{ pod_replicas }}
         containers: {{ containers }}
         image: {{ container_image }}
@@ -78,10 +79,10 @@ jobs:
         set_limits_memory: {{ memory_limits > 0 }}
         resources:
           requests:
-            cpu: {{ cpu_requests }}m
+            cpu: {{ cpu_requests }}
             memory: {{ memory_requests }}Mi
           limits:
-            cpu: {{ cpu_limits }}m
+            cpu: {{ cpu_limits }}
             memory: {{ memory_limits }}Mi
         pod_annotations:
         {%- for item in pod_annotations %}
@@ -188,6 +189,7 @@ spec:
       labels:
         app: boatload-{{ .Iteration }}-{{ .Replica }}
     spec:
+      runtimeClassName: performance-perf-profile
       containers:
       {{ $data := . }}
       {{ range $index, $element := sequence 1 .containers }}
@@ -582,7 +584,7 @@ def main():
 #      "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "kubeletCoresUsed",
 #      "kubeletMemory", "crioCoresUsed", "crioMemory"
 #  ]
-  # Recommended SNO nodedensity metrics
+# Recommended SNO nodedensity metrics
   default_metrics_collected = [
       "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "nodeCPU", "kubeletCoresUsed",
       "kubeletMemory", "kubeletCPU", "crioCoresUsed", "crioMemory", "crioCPU", "rxNetworkBytes", "txNetworkBytes",
@@ -621,9 +623,9 @@ def main():
                       help="The container environment variables")
   parser.add_argument("-m", "--configmaps", type=int, default=0, help="Number of configmaps per container")
   parser.add_argument("--secrets", type=int, default=0, help="Number of secrets per container")
-  parser.add_argument("--cpu-requests", type=int, default=0, help="CPU requests per container (millicores)")
+  parser.add_argument("--cpu-requests", type=int, default=0, help="CPU requests per container")
   parser.add_argument("--memory-requests", type=int, default=0, help="Memory requests per container (MiB)")
-  parser.add_argument("--cpu-limits", type=int, default=0, help="CPU limits per container (millicores)")
+  parser.add_argument("--cpu-limits", type=int, default=0, help="CPU limits per container")
   parser.add_argument("--memory-limits", type=int, default=0, help="Memory limits per container (MiB)")
 
   # Workload probe arguments
@@ -858,7 +860,7 @@ def main():
     logger.info("  * Pod Annotations: {}".format(cliargs.pod_annotations))
     logger.info("  * Container Image: {}".format(cliargs.container_image))
     logger.info("  * Container starting port: {}".format(cliargs.container_port))
-    logger.info("  * Container CPU: {}m requests, {}m limits".format(cliargs.cpu_requests, cliargs.cpu_limits))
+    logger.info("  * Container CPU: {} requests, {} limits".format(cliargs.cpu_requests, cliargs.cpu_limits))
     logger.info(
         "  * Container Memory: {}Mi requests, {}Mi limits".format(cliargs.memory_requests, cliargs.memory_limits))
     logger.info("  * Container Environment: {}".format(container_env_args))
@@ -933,6 +935,7 @@ def main():
         qps=cliargs.kb_qps,
         burst=cliargs.kb_burst,
         deployments=cliargs.deployments,
+        runtimeclassName= "performance-perf-profile",
         pod_replicas=cliargs.pods,
         containers=cliargs.containers,
         container_image=cliargs.container_image,

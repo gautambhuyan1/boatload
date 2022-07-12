@@ -48,9 +48,28 @@ global:
     type: elastic
 
 jobs:
+
+#  - name: boatload-pv
+#    jobType: create
+#    jobIterations: 1
+#    namespace: default
+#    namespacedIterations: false
+#    cleanup: true
+#    waitFor: ["PersistentVolume"]
+#    jobIterationDelay: 0s
+#    jobPause: 0s
+#    qps: {{ qps }}
+#    burst: {{ burst }}
+#    verifyObjects: true
+#    errorOnVerify: false
+#    objects:
+#    - objectTemplate: workload-pv.yml
+#      replicas: 61
+#      namespaced: false
+
   - name: boatload
     jobType: create
-    jobIterations: {{ namespaces }}
+    jobIterations: 1
     namespace: boatload
     namespacedIterations: true
     cleanup: true
@@ -66,24 +85,34 @@ jobs:
     - objectTemplate: workload-deployment-selector.yml
       replicas: {{ deployments }}
       inputVars:
+        runtimeClassName: performance-perf-profile
         pod_replicas: {{ pod_replicas }}
         containers: {{ containers }}
-        image: {{ container_image }}
+        image: quay.io/schseba/dpdk
         starting_port: {{ starting_port }}
         configmaps: {{ configmaps }}
+        set_requests_hps: 1
+        set_limits_hps: 1
         secrets: {{ secrets }}
-        set_requests_cpu: {{ cpu_requests > 0 }}
-        set_requests_memory: {{ memory_requests > 0 }}
-        set_limits_cpu: {{ cpu_limits > 0 }}
-        set_limits_memory: {{ memory_limits > 0 }}
+        pvcs: {{pvcs}}
+        set_requests_cpu: 28
+        set_requests_memory: 100
+        set_limits_cpu: 28
+        set_limits_memory: 100
+        net_resource: pci_srio_net1
         resources:
           requests:
-            cpu: {{ cpu_requests }}m
-            memory: {{ memory_requests }}Mi
+            cpu: 28
+            memory: 100Mi
+            hugepages-1Gi: 1Gi
+            openshift.io/pci_srio_net1: "1"
           limits:
-            cpu: {{ cpu_limits }}m
-            memory: {{ memory_limits }}Mi
+            cpu: 28
+            memory: 100Mi
+            hugepages-1Gi: 1Gi
+            openshift.io/pci_srio_net1: "1"
         pod_annotations:
+        - "k8s.v1.cni.cncf.io/networks: network-1"
         {%- for item in pod_annotations %}
         - {{ item | tojson }}
         {%- endfor %}
@@ -110,6 +139,99 @@ jobs:
     - objectTemplate: workload-secret.yml
       replicas: {{ deployments * secrets }}
     {% endif %}
+    {% if pvcs > 0 %}
+    - objectTemplate: workload-pvc.yml
+      replicas: 1
+    {% endif %}
+    {% if service %}
+    - objectTemplate: workload-service.yml
+      replicas: 1
+      inputVars:
+        ports: {{ containers }}
+        starting_port: {{ starting_port }}
+    {% endif %}
+    {% if route %}
+    - objectTemplate: workload-route.yml
+      replicas: 1
+      inputVars:
+        starting_port: {{ starting_port }}
+    {% endif %}
+
+  - name: boatload-bu
+    jobType: create
+    jobIterations: {{ namespaces }}
+    namespace: boatload-bu
+    namespacedIterations: true
+    cleanup: true
+    podWait: false
+    waitWhenFinished: true
+    jobIterationDelay: 0s
+    jobPause: 0s
+    qps: {{ qps }}
+    burst: {{ burst }}
+    verifyObjects: true
+    errorOnVerify: false
+    objects:
+    - objectTemplate: workload-deployment-selector.yml
+      replicas: {{ deployments }}
+      inputVars:
+        pod_replicas: {{ pod_replicas }}
+        containers: {{ containers }}
+        image: {{ container_image }}
+        starting_port: {{ starting_port }}
+        configmaps: {{ configmaps }}
+        secrets: {{ secrets }}
+        pvcs: {{pvcs}}
+        set_requests_cpu: {{ cpu_requests > 0 }}
+        set_requests_memory: {{ memory_requests > 0 }}
+        set_limits_cpu: {{ cpu_limits > 0 }}
+        set_limits_memory: {{ memory_limits > 0 }}
+        set_requests_hps: {{ hugepages_requests > 0 }}
+        set_limits_hps: {{ hugepages_limits > 0 }}
+        net_resource: pci_srio_net3
+        resources:
+          requests:
+            cpu: {{ cpu_requests }}m
+            memory: {{ memory_requests }}Mi
+            hugepages-1Gi: {{ hugepages_requests }}Gi
+            openshift.io/pci_srio_net3: "1"
+          limits:
+            cpu: {{ cpu_limits }}m
+            memory: {{ memory_limits }}Mi
+            hugepages-1Gi: {{ hugepages_limits }}Gi
+            openshift.io/pci_srio_net3: "1"
+        pod_annotations:
+        {%- for item in pod_annotations %}
+        - {{ item | tojson }}
+        {%- endfor %}
+#        - "k8s.v1.cni.cncf.io/networks": "network-3"
+        container_env_args: {{ container_env_args }}
+        enable_startup_probe: {{ startup_probe_args | length > 0 }}
+        enable_liveness_probe: {{ liveness_probe_args | length > 0 }}
+        enable_readiness_probe: {{ readiness_probe_args | length > 0 }}
+        startup_probe_args: {{ startup_probe_args }}
+        liveness_probe_args: {{ liveness_probe_args }}
+        readiness_probe_args: {{ readiness_probe_args }}
+        startup_probe_port: {{ startup_probe_port_enable }}
+        liveness_probe_port: {{ liveness_probe_port_enable }}
+        readiness_probe_port: {{ readiness_probe_port_enable }}
+        default_selector: "{{ default_selector }}"
+        shared_selectors: {{ shared_selectors }}
+        unique_selectors: {{ unique_selectors }}
+        unique_selector_offset: {{ offset }}
+        tolerations: {{ tolerations }}
+    {% if configmaps > 0 %}
+    - objectTemplate: workload-configmap.yml
+      replicas: {{ deployments * configmaps }}
+    {% endif %}
+    {% if secrets > 0 %}
+    - objectTemplate: workload-secret.yml
+      replicas: {{ deployments * secrets }}
+    {% endif %}
+    {% if pvcs > 0 %}
+    - objectTemplate: workload-pvc.yml
+      replicas: {{ deployments }}
+    {% endif %}
     {% if service %}
     - objectTemplate: workload-service.yml
       replicas: {{ deployments }}
@@ -123,6 +245,7 @@ jobs:
       inputVars:
         starting_port: {{ starting_port }}
     {% endif %}
+
 """
 
 workload_delete = """---
@@ -149,6 +272,27 @@ jobs:
   - kind: Namespace
     labelSelector: {kube-burner-job: boatload}
     apiVersion: v1
+
+- name: cleanup-boatload-bu
+  jobType: delete
+  waitForDeletion: true
+  qps: 10
+  burst: 20
+  objects:
+  - kind: Namespace
+    labelSelector: {kube-burner-job: boatload-bu}
+    apiVersion: v1
+
+#- name: cleanup-boatload-pv
+#  jobType: delete
+#  waitForDeletion: true
+#  qps: 10
+#  burst: 20
+#  objects:
+#  - kind: PersistentVolume
+#    labelSelector: {kube-burner-job: boatload-pv}
+#    apiVersion: v1
+
 """
 
 workload_metrics = """---
@@ -166,6 +310,31 @@ global:
     defaultIndex: {{ default_index }}
     type: elastic
 """
+
+#workload_pv = """---
+#apiVersion: v1
+#kind: PersistentVolume
+#metadata:
+#  name: pv-boatload-{{ .Iteration }}-{{ .Replica }}-{{ .JobName }}
+#spec:
+#  capacity:
+#    storage: 1Gi
+#  volumeMode: Filesystem
+#  accessModes:
+#  - ReadWriteOnce
+#  persistentVolumeReclaimPolicy: Delete
+#  storageClassName: local-storage
+#  local:
+#    path: /dev/sdc
+#  nodeAffinity:
+#    required:
+#      nodeSelectorTerms:
+#      - matchExpressions:
+#        - key: kubernetes.io/hostname
+#          operator: In
+#          values:
+#          - e32-h17-000-r750.stage.rdu2.scalelab.redhat.com
+#"""
 
 workload_deployment = """---
 apiVersion: apps/v1
@@ -188,6 +357,7 @@ spec:
       labels:
         app: boatload-{{ .Iteration }}-{{ .Replica }}
     spec:
+      runtimeClassName: performance-perf-profile
       containers:
       {{ $data := . }}
       {{ range $index, $element := sequence 1 .containers }}
@@ -204,6 +374,10 @@ spec:
             {{if $data.set_requests_memory }}
             memory: {{ $data.resources.requests.memory }}
             {{ end }}
+            {{ if $data.set_requests_hps }}
+            hugepages-1Gi: {{ index $data "resources" "requests" "hugepages-1Gi" }}
+            {{ end }}
+            openshift.io/{{ $data.net_resource }}: "1"
           limits:
             {{ if $data.set_limits_cpu }}
             cpu: {{ $data.resources.limits.cpu }}
@@ -211,6 +385,10 @@ spec:
             {{ if $data.set_limits_memory }}
             memory: {{ $data.resources.limits.memory }}
             {{ end }}
+            {{ if $data.set_limits_hps }}
+            hugepages-1Gi: {{ index $data "resources" "limits" "hugepages-1Gi" }}
+            {{ end }}
+            openshift.io/{{ $data.net_resource }}: "1"
         env:
         - name: PORT
           value: "{{ add $data.starting_port $element }}"
@@ -246,6 +424,10 @@ spec:
           {{ end }}
         {{ end }}
         volumeMounts:
+        {{ range $index, $element := sequence 1 $data.pvcs }}
+        - name: pvc-{{ $element }}
+          mountPath: /etc/pvc-{{ $element }}
+        {{ end }}
         {{ range $index, $element := sequence 1 $data.configmaps }}
         - name: cm-{{ $element }}
           mountPath: /etc/cm-{{ $element }}
@@ -254,8 +436,20 @@ spec:
         - name: secret-{{ $element }}
           mountPath: /etc/secret-{{ $element }}
         {{ end }}
+        {{ if $data.set_requests_hps }}
+        - name: hugepage
+          mountPath: /dev/hugepages
+        {{ end }}
       {{ end }}
       volumes:
+      {{ range $index, $element := sequence 1 .pvcs }}
+      {{ $d_index := add $data.Replica -1 }}
+      {{ $d_pvcs_count := multiply $d_index $data.pvcs }}
+      {{ $pvcs_index := add $d_pvcs_count $element }}
+      - name: pvc-{{ $element }}
+        persistentVolumeClaim:
+          claimName: boatload-{{ $data.Iteration }}-{{ $pvcs_index }}-{{ $data.JobName }}
+      {{ end }}
       {{ range $index, $element := sequence 1 .configmaps }}
       {{ $d_index := add $data.Replica -1 }}
       {{ $d_cm_count := multiply $d_index $data.configmaps }}
@@ -271,6 +465,12 @@ spec:
       - name: secret-{{ $element }}
         secret:
           secretName: boatload-{{ $data.Iteration }}-{{ $s_index }}-{{ $data.JobName }}
+      {{ end }}
+      {{ if $data.set_requests_hps }}
+      - name: hugepage
+        emptyDir:
+         medium: HugePages
+        restartPolicy: Never
       {{ end }}
       nodeSelector:
         {{ .default_selector }}
@@ -342,6 +542,21 @@ metadata:
   name: boatload-{{ .Iteration }}-{{ .Replica }}-{{ .JobName }}
 data:
   boatload-{{ .Iteration }}-{{ .Replica }}-{{ .JobName }}: UmFuZG9tIGRhdGEK
+"""
+
+workload_pvc = """---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: boatload-{{ .Iteration }}-{{ .Replica }}-{{ .JobName }}
+spec:
+  accessModes:
+  - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-storage
 """
 
 metrics_header = ["start_ts", "workload_complete_ts", "measurement_complete_ts", "cleanup_complete_ts", "end_ts",
@@ -543,7 +758,7 @@ def write_csv_results(result_file_name, results):
       "start_time", "workload_complete_time", "measurement_complete_time", "cleanup_complete_time", "end_time",
       "title", "workload_uuid", "workload_duration", "measurement_duration", "cleanup_duration", "metrics_duration",
       "total_duration", "namespaces", "deployments", "pods", "containers", "services", "routes", "configmaps",
-      "secrets", "image", "cpu_requests", "memory_requests", "cpu_limits", "memory_limits", "startup_probe",
+      "secrets", "pvcs", "image", "cpu_requests", "memory_requests", "hugepages_requests", "cpu_limits", "memory_limits", "hugepages_limits", "startup_probe",
       "liveness_probe", "readiness_probe", "shared_selectors", "unique_selectors", "tolerations", "kb_qps", "kb_burst",
       "duration", "interface", "start_vlan", "end_vlan", "latency", "packet_loss", "bandwidth_limit", "flap_down",
       "flap_up", "firewall", "network", "indexed", "dry_run", "flapped_down", "NodeNotReady_node-controller",
@@ -605,6 +820,7 @@ def main():
   parser.add_argument("-l", "--service", action="store_true", default=False, help="Include service per deployment")
   parser.add_argument("-r", "--route", action="store_true", default=False, help="Include route per deployment")
   parser.add_argument("-p", "--pods", type=int, default=1, help="Number of pod replicas per deployment to create")
+  parser.add_argument("-v", "--pvcs", type=int, default=1, help="Number of pvcs per deployment to create")
   parser.add_argument("-c", "--containers", type=int, default=1, help="Number of containers per pod replica to create")
 
   # Workload annotation arguments
@@ -623,8 +839,10 @@ def main():
   parser.add_argument("--secrets", type=int, default=0, help="Number of secrets per container")
   parser.add_argument("--cpu-requests", type=int, default=0, help="CPU requests per container (millicores)")
   parser.add_argument("--memory-requests", type=int, default=0, help="Memory requests per container (MiB)")
+  parser.add_argument("--hugepages-requests", type=int, default=0, help="Hugepages-1Gi requests per container (Gi)")
   parser.add_argument("--cpu-limits", type=int, default=0, help="CPU limits per container (millicores)")
   parser.add_argument("--memory-limits", type=int, default=0, help="Memory limits per container (MiB)")
+  parser.add_argument("--hugepages-limits", type=int, default=0, help="Hugepages-1Gi limits per container (Gi)")
 
   # Workload probe arguments
   parser.add_argument("--startup-probe", type=str, default="http,0,10,1,12",
@@ -847,6 +1065,10 @@ def main():
       logger.info("  * 1 Service per deployment")
     else:
       logger.info("  * No Service per deployment")
+    if cliargs.pvcs:
+      logger.info("  * 1 PVC per deployment")
+    else:
+      logger.info("  * No PVC per deployment")
     if cliargs.route:
       logger.info("  * 1 Route per deployment")
     else:
@@ -861,6 +1083,7 @@ def main():
     logger.info("  * Container CPU: {}m requests, {}m limits".format(cliargs.cpu_requests, cliargs.cpu_limits))
     logger.info(
         "  * Container Memory: {}Mi requests, {}Mi limits".format(cliargs.memory_requests, cliargs.memory_limits))
+    logger.info("  * Container Hugepages-1Gi: {}Gi requests, {}Gi limits".format(cliargs.hugepages_requests, cliargs.hugepages_limits))
     logger.info("  * Container Environment: {}".format(container_env_args))
     su_probe = cliargs.startup_probe.split(",")[0]
     l_probe = cliargs.liveness_probe.split(",")[0]
@@ -941,8 +1164,10 @@ def main():
         secrets=cliargs.secrets,
         cpu_requests=cliargs.cpu_requests,
         cpu_limits=cliargs.cpu_limits,
+        hugepages_requests=cliargs.hugepages_requests,
         memory_requests=cliargs.memory_requests,
         memory_limits=cliargs.memory_limits,
+        hugepages_limits=cliargs.hugepages_limits,
         pod_annotations=cliargs.pod_annotations,
         container_env_args=container_env_args,
         startup_probe_args=startup_probe_args,
@@ -957,6 +1182,7 @@ def main():
         offset=cliargs.offset,
         tolerations=cliargs.tolerations,
         service=cliargs.service,
+        pvcs=cliargs.pvcs,
         route=cliargs.route)
 
     tmp_directory = tempfile.mkdtemp()
@@ -964,6 +1190,9 @@ def main():
     with open("{}/workload-create.yml".format(tmp_directory), "w") as file1:
       file1.writelines(workload_create_rendered)
     logger.info("Created {}/workload-create.yml".format(tmp_directory))
+#    with open("{}/workload-pv.yml".format(tmp_directory), "w") as file1:
+#      file1.writelines(workload_pv)
+#    logger.info("Created {}/workload-pv.yml".format(tmp_directory))
     with open("{}/workload-deployment-selector.yml".format(tmp_directory), "w") as file1:
       file1.writelines(workload_deployment)
     logger.info("Created {}/workload-deployment-selector.yml".format(tmp_directory))
@@ -979,6 +1208,9 @@ def main():
     with open("{}/workload-secret.yml".format(tmp_directory), "w") as file1:
       file1.writelines(workload_secret)
     logger.info("Created {}/workload-secret.yml".format(tmp_directory))
+    with open("{}/workload-pvc.yml".format(tmp_directory), "w") as file1:
+      file1.writelines(workload_pvc)
+    logger.info("Created {}/workload-pvc.yml".format(tmp_directory))
     workload_measurements_json = "{}/metrics/boatload-podLatency-summary.json".format(tmp_directory)
 
     kb_cmd = ["kube-burner", "init", "-c", "workload-create.yml", "--uuid", workload_UUID]
@@ -1339,7 +1571,7 @@ def main():
         datetime.utcfromtimestamp(cleanup_end_time), datetime.utcfromtimestamp(end_time), cliargs.csv_title,
         workload_UUID, workload_duration, measurement_duration, cleanup_duration, metrics_duration, total_time,
         cliargs.namespaces, cliargs.deployments, cliargs.pods, cliargs.containers, int(cliargs.service),
-        int(cliargs.route), cliargs.configmaps, cliargs.secrets, cliargs.container_image, cliargs.cpu_requests,
+        int(cliargs.route), int(cliargs.pvcs), cliargs.configmaps, cliargs.secrets, cliargs.container_image, cliargs.cpu_requests,
         cliargs.memory_requests, cliargs.cpu_limits, cliargs.memory_limits, cliargs.startup_probe, cliargs.liveness_probe,
         cliargs.readiness_probe, cliargs.shared_selectors, cliargs.unique_selectors, cliargs.tolerations, cliargs.kb_qps,
         cliargs.kb_burst, cliargs.duration, cliargs.interface, cliargs.start_vlan, cliargs.end_vlan, cliargs.latency,

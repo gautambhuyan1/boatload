@@ -31,27 +31,24 @@ import tempfile
 import time
 import uuid
 
-
-workload_create = """---
+workload_churn = """---
 global:
   writeToFile: true
   metricsDirectory: metrics
   measurements:
   - name: podLatency
     esIndex: {{ measurements_index }}
-
   indexerConfig:
     enabled: {{ indexing }}
     esServers: [{{ index_server}}]
     insecureSkipVerify: true
     defaultIndex: {{ default_index }}
     type: elastic
-
 jobs:
-  - name: boatload
+  - name: sno-churning
     jobType: create
     jobIterations: {{ namespaces }}
-    namespace: boatload
+    namespace: sno-churning
     namespacedIterations: true
     cleanup: true
     podWait: false
@@ -66,6 +63,7 @@ jobs:
     - objectTemplate: workload-deployment-selector.yml
       replicas: {{ deployments }}
       inputVars:
+#        runtimeClassName: performance-perf-profile
         pod_replicas: {{ pod_replicas }}
         containers: {{ containers }}
         image: {{ container_image }}
@@ -123,6 +121,88 @@ jobs:
       inputVars:
         starting_port: {{ starting_port }}
     {% endif %}
+
+{% for val in range(1, namespaces+1) %}
+  - name: sno-churning-delete-{{ val }}
+    jobType: delete
+    waitForDeletion: False
+    objects:
+    - kind: Namespace
+      labelSelector: {name: sno-churning-{{ val }}}
+      apiVersion: v1
+
+  - name: sno-churning-churn-{{ val }}
+    namespacedIterations: false
+    namespace: sno-churning-churn-{{ val }}
+    jobIterations: 1
+    waitWhenFinished: false
+    jobPause: 10s
+    qps: {{ qps }}
+    burst: {{ burst }}
+    objects:
+    - objectTemplate: workload-deployment-selector.yml
+      replicas: {{ deployments }}
+      inputVars:
+#       runtimeClassName: performance-perf-profile
+        pod_replicas: {{ pod_replicas }}
+        containers: {{ containers }}
+        image: {{ container_image }}
+        starting_port: {{ starting_port }}
+        configmaps: {{ configmaps }}
+        secrets: {{ secrets }}
+        set_requests_cpu: {{ cpu_requests > 0 }}
+        set_requests_memory: {{ memory_requests > 0 }}
+        set_limits_cpu: {{ cpu_limits > 0 }}
+        set_limits_memory: {{ memory_limits > 0 }}
+        resources:
+          requests:
+            cpu: {{ cpu_requests }}m
+            memory: {{ memory_requests }}Mi
+          limits:
+            cpu: {{ cpu_limits }}m
+            memory: {{ memory_limits }}Mi
+        pod_annotations:
+        {%- for item in pod_annotations %}
+        - {{ item | tojson }}
+        {%- endfor %}
+        container_env_args: {{ container_env_args }}
+        enable_startup_probe: {{ startup_probe_args | length > 0 }}
+        enable_liveness_probe: {{ liveness_probe_args | length > 0 }}
+        enable_readiness_probe: {{ readiness_probe_args | length > 0 }}
+        startup_probe_args: {{ startup_probe_args }}
+        liveness_probe_args: {{ liveness_probe_args }}
+        readiness_probe_args: {{ readiness_probe_args }}
+        startup_probe_port: {{ startup_probe_port_enable }}
+        liveness_probe_port: {{ liveness_probe_port_enable }}
+        readiness_probe_port: {{ readiness_probe_port_enable }}
+        default_selector: "{{ default_selector }}"
+        shared_selectors: {{ shared_selectors }}
+        unique_selectors: {{ unique_selectors }}
+        unique_selector_offset: {{ offset }}
+        tolerations: {{ tolerations }}
+    {% if configmaps > 0 %}
+    - objectTemplate: workload-configmap.yml
+      replicas: {{ deployments * configmaps }}
+    {% endif %}
+    {% if secrets > 0 %}
+    - objectTemplate: workload-secret.yml
+      replicas: {{ deployments * secrets }}
+    {% endif %}
+    {% if service %}
+    - objectTemplate: workload-service.yml
+      replicas: {{ deployments }}
+      inputVars:
+        ports: {{ containers }}
+        starting_port: {{ starting_port }}
+    {% endif %}
+    {% if route %}
+    - objectTemplate: workload-route.yml
+      replicas: {{ deployments }}
+      inputVars:
+        starting_port: {{ starting_port }}
+    {% endif %}
+
+{% endfor %}
 """
 
 workload_delete = """---
@@ -131,14 +211,24 @@ global:
   measurements:
   - name: podLatency
     esIndex: {{ measurements_index }}
-
   indexerConfig:
     enabled: {{ indexing }}
     esServers: [{{ index_server}}]
     insecureSkipVerify: true
     defaultIndex: {{ default_index }}
     type: elastic
-
+#jobs:
+#{% for val in range(1, 100+1) %}    
+#  - name: sno-churning-churn-delete-{{ val }}
+#    jobType: delete
+#    waitForDeletion: true
+#    qps: 10
+#    burst: 20
+#    objects:
+#    - kind: Namespace
+#      labelSelector: {name: sno-churning-churn-{{val}}}
+#      apiVersion: v1
+#{%- endfor %}
 jobs:
 - name: cleanup-boatload
   jobType: delete
@@ -147,7 +237,7 @@ jobs:
   burst: 20
   objects:
   - kind: Namespace
-    labelSelector: {kube-burner-job: boatload}
+    labelSelector: {kube-burner-job: sno-churning}
     apiVersion: v1
 """
 
@@ -158,7 +248,6 @@ global:
   measurements:
   - name: podLatency
     esIndex: {{ measurements_index }}
-
   indexerConfig:
     enabled: {{ indexing }}
     esServers: [{{ index_server}}]
@@ -171,12 +260,12 @@ workload_deployment = """---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: boatload-{{ .Iteration }}-{{ .Replica }}-{{ .JobName }}
+  name: sno-churn-{{ .Iteration }}-{{ .Replica }}-{{ .JobName }}
 spec:
   replicas: {{ .pod_replicas }}
   selector:
     matchLabels:
-      app: boatload-{{ .Iteration }}-{{ .Replica }}
+      app: sno-churn-{{ .Iteration }}-{{ .Replica }}
   strategy:
     resources: {}
   template:
@@ -186,12 +275,13 @@ spec:
         {{ . }}
         {{ end }}
       labels:
-        app: boatload-{{ .Iteration }}-{{ .Replica }}
+        app: sno-churn-{{ .Iteration }}-{{ .Replica }}
     spec:
+#      runtimeClassName: performance-perf-profile
       containers:
       {{ $data := . }}
       {{ range $index, $element := sequence 1 .containers }}
-      - name: boatload-{{ $element }}
+      - name: sno-churn-{{ $element }}
         image: {{ $data.image }}
         ports:
         - containerPort: {{ add $data.starting_port $element }}
@@ -349,7 +439,7 @@ metrics_header = ["start_ts", "workload_complete_ts", "measurement_complete_ts",
     "title", "workload_uuid",]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s : %(levelname)s : %(message)s")
-logger = logging.getLogger("boatload")
+logger = logging.getLogger("sno-churning")
 logging.Formatter.converter = time.gmtime
 
 
@@ -578,20 +668,20 @@ def main():
       "RESPONSE_DELAY_MILLISECONDS=50", "LIVENESS_SUCCESS_MAX=60", "READINESS_SUCCESS_MAX=30"
   ]
   # Defaults set for bare-metal cluster nodedensity metrics
-#  default_metrics_collected = [
-#      "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "kubeletCoresUsed",
-#      "kubeletMemory", "crioCoresUsed", "crioMemory"
-#  ]
+  #default_metrics_collected = [
+  #    "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "kubeletCoresUsed",
+  #    "kubeletMemory", "crioCoresUsed", "crioMemory"
+  #]
   # Recommended SNO nodedensity metrics
   default_metrics_collected = [
-      "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "nodeCPU", "kubeletCoresUsed",
-      "kubeletMemory", "kubeletCPU", "crioCoresUsed", "crioMemory", "crioCPU", "rxNetworkBytes", "txNetworkBytes",
-      "nodeDiskWrittenBytes", "nodeDiskReadBytes"
+       "nodeReadyStatus", "nodeCoresUsed", "nodeMemoryConsumed", "kubeletCoresUsed",
+       "kubeletCPU", "kubeletMemory", "crioCoresUsed", "crioCPU", "crioMemory", "rxNetworkBytes", "txNetworkBytes",
+       "nodeDiskWrittenBytes", "nodeDiskReadBytes", "nodeCPU", "controlPlaneCPU", "controlPlaneMemory"
   ]
 
   parser = argparse.ArgumentParser(
       description="Run boatload",
-      prog="boatload.py", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+      prog="boatload_churn.py", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
   # Phase arguments
   parser.add_argument("--no-workload-phase", action="store_true", default=False, help="Disables workload phase")
@@ -923,8 +1013,8 @@ def main():
     logger.info("Workload phase starting ({})".format(int(workload_start_time * 1000)))
     phase_break()
 
-    t = Template(workload_create)
-    workload_create_rendered = t.render(
+    t = Template(workload_churn)
+    workload_churn_rendered = t.render(
         measurements_index=cliargs.measurements_index,
         indexing=indexing_enabled,
         index_server=cliargs.index_server,
@@ -933,6 +1023,7 @@ def main():
         qps=cliargs.kb_qps,
         burst=cliargs.kb_burst,
         deployments=cliargs.deployments,
+#        runtimeclassName= "performance-perf-profile",
         pod_replicas=cliargs.pods,
         containers=cliargs.containers,
         container_image=cliargs.container_image,
@@ -961,9 +1052,9 @@ def main():
 
     tmp_directory = tempfile.mkdtemp()
     logger.info("Created {}".format(tmp_directory))
-    with open("{}/workload-create.yml".format(tmp_directory), "w") as file1:
-      file1.writelines(workload_create_rendered)
-    logger.info("Created {}/workload-create.yml".format(tmp_directory))
+    with open("{}/workload-churn.yml".format(tmp_directory), "w") as file1:
+      file1.writelines(workload_churn_rendered)
+    logger.info("Created {}/workload-churn.yml".format(tmp_directory))
     with open("{}/workload-deployment-selector.yml".format(tmp_directory), "w") as file1:
       file1.writelines(workload_deployment)
     logger.info("Created {}/workload-deployment-selector.yml".format(tmp_directory))
@@ -979,12 +1070,12 @@ def main():
     with open("{}/workload-secret.yml".format(tmp_directory), "w") as file1:
       file1.writelines(workload_secret)
     logger.info("Created {}/workload-secret.yml".format(tmp_directory))
-    workload_measurements_json = "{}/metrics/boatload-podLatency-summary.json".format(tmp_directory)
+    workload_measurements_json = "{}/metrics/sno-churning-podLatency-summary.json".format(tmp_directory)
 
-    kb_cmd = ["kube-burner", "init", "-c", "workload-create.yml", "--uuid", workload_UUID]
+    kb_cmd = ["kube-burner", "init", "-c", "workload-churn.yml", "--uuid", workload_UUID]
     rc, _ = command(kb_cmd, cliargs.dry_run, tmp_directory)
     if rc != 0:
-      logger.error("boatload (workload-create.yml) failed, kube-burner rc: {}".format(rc))
+      logger.error("boatload (workload-churn.yml) failed, kube-burner rc: {}".format(rc))
       sys.exit(1)
     workload_end_time = time.time()
     logger.info("Workload phase complete ({})".format(int(workload_end_time * 1000)))
@@ -1116,7 +1207,7 @@ def main():
     phase_break()
     logger.info("Post measurement pod eviction count")
     phase_break()
-    ns_pattern = re.compile("boatload-[0-9]+")
+    ns_pattern = re.compile("sno-churning-[0-9]+")
     eviction_pattern = re.compile("Marking for deletion Pod")
     oc_cmd = ["oc", "get", "ev", "-A", "--field-selector", "reason=TaintManagerEviction", "-o", "json"]
     rc, output = command(oc_cmd, cliargs.dry_run, no_log=True)
@@ -1157,6 +1248,7 @@ def main():
     workload_delete_rendered = t.render(
         measurements_index=cliargs.measurements_index,
         indexing=indexing_enabled,
+        namespaces=cliargs.namespaces,
         index_server=cliargs.index_server,
         default_index=cliargs.default_index)
 

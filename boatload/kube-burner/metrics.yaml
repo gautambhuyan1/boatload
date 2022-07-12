@@ -130,7 +130,7 @@
 
 # Reducing number of metrics to capture by commenting this metric.
 # # total cpu cores - idle+iowait
-# - query: sum(node_cpu_info) by (instance) - on (instance) sum(irate(node_cpu_seconds_total{mode=~"idle|iowait"}[2m])) by (instance)
+#- query: sum(node_cpu_info) by (instance) - on (instance) sum(irate(node_cpu_seconds_total{mode=~"idle|iowait"}[2m])) by (instance)
 #   metricName: nodeCoresNotIdle
 
 # Sourced from /proc/meminfo, total - available = consumed memory
@@ -145,3 +145,11 @@
 # Crio as CPU cores instead of cpu usage %
 - query: sum(irate(process_cpu_seconds_total{service="kubelet",job="crio"}[2m])) by (node) and on (node) kube_node_role{role="worker"}
   metricName: crioCoresUsed
+
+# Control Plane Metrics
+- query: irate(process_cpu_seconds_total{job=~".*(crio|kubelet|etcd|controller-manager|apiserver|scheduler).*"}[2m]) by (node)
+  metricName: controlPlaneCPU
+
+# Control Plane Memory
+- query: process_resident_memory_bytes{job=~".*(crio|etcd|kubelet|controller-manager|apiserver|scheduler).*"} by (node)
+  metricName: controlPlaneMemory
