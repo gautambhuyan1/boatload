@@ -1228,7 +1228,7 @@ def main():
   nodeready_count = 0
   link_flap_count = 0
   killed_pod = 0
-# pending_pod = 0
+  pending_pod = 0
   notready_pod = 0
   marked_evictions = 0
   measurement_end_time = workload_end_time
@@ -1377,32 +1377,25 @@ def main():
       json_data = json.loads(output)
     else:
       json_data = {"items": []}
-    x = 0
     for item in json_data["items"]:
       if ns_pattern1.search(item["involvedObject"]["namespace"]):
         killed_pod += 1
-        y = ns_pattern1.search(item["involvedObject"]["namespace"])
       if ns_pattern2.search(item["involvedObject"]["namespace"]):
         killed_pod += 1
-        z = ns_pattern1.search(item["involvedObject"]["namespace"])
-    if x == 0:
-     print("ns_pattern1 =" , y)
-     print("ns_pattern2 =" , z)
-    x = 1
-#    oc_cmd = ["oc", "get", "ev", "-A", "--field-selector", "reason=Unhealthy", "-o", "json"]
-#    rc, output = command(oc_cmd, cliargs.dry_run, no_log=True)
-#    if rc != 0:
-#      logger.error("boatload, oc get ev rc: {}".format(rc))
-#      sys.exit(1)
-#    if not cliargs.dry_run:
-#      json_data = json.loads(output)
-#    else:
-#      json_data = {"items": []}
-#    for item in json_data["items"]:
-#      if ns_pattern1.search(item["involvedObject"]["namespace"]):
-#        pending_pod += 1
-#      if ns_pattern2.search(item["involvedObject"]["namespace"]):
-#        pending_pod += 1
+    oc_cmd = ["oc", "get", "ev", "-A", "--field-selector", "reason=Unhealthy", "-o", "json"]
+    rc, output = command(oc_cmd, cliargs.dry_run, no_log=True)
+    if rc != 0:
+      logger.error("boatload, oc get ev rc: {}".format(rc))
+      sys.exit(1)
+    if not cliargs.dry_run:
+      json_data = json.loads(output)
+    else:
+      json_data = {"items": []}
+    for item in json_data["items"]:
+      if ns_pattern1.search(item["involvedObject"]["namespace"]):
+        pending_pod += 1
+      if ns_pattern2.search(item["involvedObject"]["namespace"]):
+        pending_pod += 1
     oc_cmd = ["oc", "get", "pods", "-A", "-o", "json"]
     rc, output = command(oc_cmd, cliargs.dry_run, no_log=True)
     if rc != 0:
@@ -1412,16 +1405,21 @@ def main():
       json_data = json.loads(output)
     else:
       json_data = {"items": []}
+    x = 0
     for item in json_data["items"]:
      #pod_name = item["metadata"]["name"]
       if ns_pattern1.search(item["metadata"]["namespace"]) or ns_pattern2.search(item["metadata"]["namespace"]):
         condition = [con for con in item["status"]["conditions"] if con["type"] == "Ready"][0]["status"]
         if item["status"]["phase"] != "Running" or condition == "False":
           notready_pod += 1
+    if x == 0:
+     print("condition = ", condition)
+    x = 1
     logger.info("boatload-* pods marked for deletion by Taint Manager: {}".format(marked_evictions))
     logger.info("boatload-* pods killed: {}".format(killed_pod))
-#    logger.info("boatload-* pods pending: {}".format(pending_pod))
+    logger.info("boatload-* pods pending: {}".format(pending_pod))
     logger.info("boatload-* pods not ready: {}".format(notready_pod))
+
   # Cleanup Phase
   cleanup_end_time = measurement_end_time
   if not cliargs.no_cleanup_phase:
@@ -1590,7 +1588,7 @@ def main():
     logger.info("* Number of NodeReady events: {}".format(nodeready_count))
     logger.info("* Number of boatload pods marked for deletion (TaintManagerEviction): {}".format(marked_evictions))
     logger.info("* Number of boatload pods killed: {}".format(killed_pod))
-#    logger.info("* Number of boatload pods pending: {}".format(pending_pod))
+    logger.info("* Number of boatload pods pending: {}".format(pending_pod))
     logger.info("* Number of boatload pods not ready: {}".format(notready_pod))
   if not cliargs.no_workload_phase:
     workload_duration = round(workload_end_time - workload_start_time, 1)

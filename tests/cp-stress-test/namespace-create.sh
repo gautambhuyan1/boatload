@@ -1,7 +1,7 @@
 #! /bin/bash
 oc create ns boatload-1
 oc label namespace boatload-1 kube-burner-job=boatload
-for i in {1..60}
+for i in {1..2}
 do
  oc create ns boatload-bu-$i
  oc label namespace boatload-bu-$i kube-burner-job=boatload-bu

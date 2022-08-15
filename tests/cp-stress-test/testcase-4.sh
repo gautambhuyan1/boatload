@@ -63,12 +63,17 @@ test_index=0
 
 # Configmaps and Secrets
 obj_counts="4 8"
+annotations=" cpu-load-balancing.crio.io=\''true'\' irq-load-balancing.crio.io=\''disable'\' cpu-quota.crio.io=\''disable'\' "
+resources=" --cpu-requests 50 --memory-requests 100 "
 for obj_count in ${obj_counts}; do
   for iteration in `seq 1 ${iterations}`; do
     test_index=$((${test_index} + 1))
-    echo "$(date -u +%Y%m%d-%H%M%S) - node density ${tc_num}.${test_index} - ${iteration}/${iterations} - ${total_pods} namespaces, 1 deploy, 1 pod, 2 container, gohttp image, 1 service, 1 route, no probes, ${obj_count} configmaps, ${obj_count} secrets, no resources set"
+    echo "$(date -u +%Y%m%d-%H%M%S) - node density ${tc_num}.${test_index} - ${iteration}/${iterations} - ${total_pods} namespaces, 1 deploy, 1 pod, 1 container, gohttp image, 1 service, 1 route, no probes, ${obj_count} configmaps, ${obj_count} secrets, no resources set"
     logfile="../logs/$(date -u +%Y%m%d-%H%M%S)-nodedensity-${tc_num}.${test_index}.log"
-    ../../boatload/boatload.py ${dryrun} ${csvfile} --csv-title "${total_pods}n-1d-1p-2c-${obj_count}cm-${obj_count}s-${iteration}" -n ${total_pods} -d 1 -p 1 -c 2 -l -r -m ${obj_count} --secrets ${obj_count} --no-probes ${resources} ${gohttp_env_vars} ${measurement} ${INDEX_ARGS} &> ${logfile}
+    source namespace-create.sh
+    sleep 900
+   ../../boatload/boatload-mixed-pv-test-2.py ${dryrun} ${csvfile} --csv-title "${total_pods}n-1d-1p-1c-gubu-${obj_count}cm-${obj_count}s-${iteration}" -n ${total_pods} -d 1 -p 1 -c 1 -v 1 -l -r -m ${obj_count} --no-probes ${resources} ${gohttp_env_vars} ${measurement} ${INDEX_ARGS} &> ${logfile} --enable-pod-annotations -a ${annotations}
+    oc delete $(oc get pv -o name)
     echo "$(date -u +%Y%m%d-%H%M%S) - node density ${tc_num}.${test_index} - ${iteration}/${iterations} complete, sleeping ${sleep_period}"
     sleep ${sleep_period}
     echo "****************************************************************************************************************************************"

@@ -22,14 +22,14 @@ sleep_time=300
 #sleep ${sleep_time}
 #time ./testcase-3.sh ${version}-${network}-sno${nodes} 60 | tee ${version}-${network}-sno${nodes}-tc3.log
 #sleep ${sleep_time}
-#time ./testcase-4.sh ${version}-${network}-sno${nodes} 74 | tee ${version}-${network}-sno${nodes}-tc4.log
+#time ./testcase-4.sh ${version}-${network}-sno${nodes} 60 | tee ${version}-${network}-sno${nodes}-tc4.log
 #sleep ${sleep_time}
 #time ./testcase-5.sh ${version}-${network}-sno${nodes} 64 | tee ${version}-${network}-sno${nodes}-tc5.log
 #sleep ${sleep_time}
-#time ./testcase-6.sh ${version}-${network}-sno${nodes} 64 | tee ${version}-${network}-sno${nodes}-tc6.log
+#time ./testcase-6.sh ${version}-${network}-sno${nodes} 60 | tee ${version}-${network}-sno${nodes}-tc6.log
 #sleep ${sleep_time}
 # Test case 7 is too difficult so lets keep it commented out for now
 #time ./testcase-7.sh ${version}-${network}-sno${nodes} 74 | tee ${version}-${network}-sno${nodes}-tc7.log
 #sleep ${sleep_time}
-time ./testcase-8.sh ${version}-${network}-sno${nodes} 60 | tee ${version}-${network}-sno${nodes}-tc8.log
+time ./testcase-8.sh ${version}-${network}-sno${nodes} 2 | tee ${version}-${network}-sno${nodes}-tc8.log
 sleep ${sleep_time}

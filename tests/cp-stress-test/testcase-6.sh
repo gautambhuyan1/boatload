@@ -38,9 +38,11 @@ probes=()
 probes+=("--startup-probe ${probe_type},0,10,1,12 --liveness-probe off --readiness-probe off")
 probes+=("--startup-probe ${probe_type},0,5,1,12 --liveness-probe off --readiness-probe off")
 probes+=("--startup-probe ${probe_type},0,1,1,12 --liveness-probe off --readiness-probe off")
+probes+=("--startup-probe ${probe_type},0,10,2,12,1 --liveness-probe ${probe_type},0,10,2,3,1 --readiness-probe ${probe_type},0,10,2,3,1")
 probes+=("--startup-probe ${probe_type},0,10,1,12 --liveness-probe ${probe_type},0,10,1,3 --readiness-probe off")
 probes+=("--startup-probe ${probe_type},0,5,1,12 --liveness-probe ${probe_type},0,5,1,3 --readiness-probe off")
 probes+=("--startup-probe ${probe_type},0,1,1,12 --liveness-probe ${probe_type},0,1,1,3 --readiness-probe off")
+probes+=("--startup-probe ${probe_type},0,10,2,12,1 --liveness-probe ${probe_type},0,10,2,3,1 --readiness-probe ${probe_type},0,10,2,3,1")
 probes+=("--startup-probe ${probe_type},0,10,1,12 --liveness-probe ${probe_type},0,10,1,3 --readiness-probe ${probe_type},0,10,1,3,1")
 probes+=("--startup-probe ${probe_type},0,5,1,12 --liveness-probe ${probe_type},0,5,1,3 --readiness-probe ${probe_type},0,5,1,3,1")
 probes+=("--startup-probe ${probe_type},0,1,1,12 --liveness-probe ${probe_type},0,1,1,3 --readiness-probe ${probe_type},0,1,1,3,1")
@@ -52,16 +54,23 @@ probes_csv_titles+=("${probe_type}-s1-l0-r0")
 probes_csv_titles+=("${probe_type}-s10-l10-r0")
 probes_csv_titles+=("${probe_type}-s5-l5-r0")
 probes_csv_titles+=("${probe_type}-s1-l1-r0")
+probes_csv_titles+=("${probe_type}-s10-l10-r10-2")
 probes_csv_titles+=("${probe_type}-s10-l10-r10")
 probes_csv_titles+=("${probe_type}-s5-l5-r5")
 probes_csv_titles+=("${probe_type}-s1-l1-r1")
 
+annotations=" cpu-load-balancing.crio.io=\''true'\' irq-load-balancing.crio.io=\''disable'\' cpu-quota.crio.io=\''disable'\' "
+resources=" --cpu-requests 50 --memory-requests 100 "
+
 for (( index=0; index<${#probes[@]}; index++)); do
   for iteration in `seq 1 ${iterations}`; do
     test_index=$((${test_index} + 1))
-    echo "$(date -u +%Y%m%d-%H%M%S) - node density ${tc_num}.${test_index} - ${iteration}/${iterations} - ${total_pods} namespaces, 1 deploy, 1 pod, 2 container, gohttp image, 1 service, 1 route, ${probes[$index]}, no configmaps, no secrets, no resources set"
+    echo "$(date -u +%Y%m%d-%H%M%S) - node density ${tc_num}.${test_index} - ${iteration}/${iterations} - ${total_pods} namespaces, 1 deploy, 1 pod, 1 container, gohttp image, 1 service, 1 route, ${probes[$index]}, no configmaps, no secrets, resources set"
     logfile="../logs/$(date -u +%Y%m%d-%H%M%S)-nodedensity-${tc_num}.${test_index}.log"
-    ../../boatload/boatload.py ${dryrun} ${csvfile} --csv-title "${total_pods}n-1d-1p-2c-${probes_csv_titles[$index]}-${iteration}" -n ${total_pods} -d 1 -p 1 -c 2 -l -r  ${probes[$index]} ${gohttp_env_vars} ${measurement} ${INDEX_ARGS} &> ${logfile}
+    source namespace-create.sh
+    sleep 500
+    ../../boatload/boatload-mixed-pv-test-2.py ${dryrun} ${csvfile} --csv-title "${total_pods}n-1d-1p-1c-gubu-${probes_csv_titles[$index]}-${iteration}" -n ${total_pods} -d 1 -p 1 -c 1 -v 1 -l -r ${probes[$index]} ${resources} ${gohttp_env_vars} ${measurement} ${INDEX_ARGS} &> ${logfile} --enable-pod-annotations -a ${annotations}
+    oc delete $(oc get pv -o name)
     echo "$(date -u +%Y%m%d-%H%M%S) - node density ${tc_num}.${test_index} - ${iteration}/${iterations} complete, sleeping ${sleep_period}"
     sleep ${sleep_period}
     echo "****************************************************************************************************************************************"
